@@ -667,6 +667,25 @@ impl ImageSource<'_> {
     }
 }
 
+/// Scale the user's UV rect to account for block-alignment padding
+/// in the GPU texture, so that only the original (non-padded) content
+/// is sampled.
+fn adjust_uv_for_padding(uv: Rect, texture: &SizedTexture, ctx: &Context) -> Rect {
+    if let Some(meta) = ctx.tex_manager().read().meta(texture.id) {
+        let (gpu_w, gpu_h) = (meta.size[0] as f32, meta.size[1] as f32);
+        let (orig_w, orig_h) = (meta.original_size[0] as f32, meta.original_size[1] as f32);
+        if gpu_w > 0.0 && gpu_h > 0.0 {
+            let scale_x = (orig_w / gpu_w).min(1.0);
+            let scale_y = (orig_h / gpu_h).min(1.0);
+            return Rect::from_min_max(
+                pos2(uv.min.x * scale_x, uv.min.y * scale_y),
+                pos2(uv.max.x * scale_x, uv.max.y * scale_y),
+            );
+        }
+    }
+    uv
+}
+
 pub fn paint_texture_load_result(
     ui: &Ui,
     tlr: &TextureLoadResult,
@@ -677,7 +696,10 @@ pub fn paint_texture_load_result(
 ) {
     match tlr {
         Ok(TexturePoll::Ready { texture }) => {
-            paint_texture_at(ui.painter(), rect, options, texture);
+            let uv = adjust_uv_for_padding(options.uv, texture, ui.ctx());
+            let mut options = options.clone();
+            options.uv = uv;
+            paint_texture_at(ui.painter(), rect, &options, texture);
         }
         Ok(TexturePoll::Pending { .. }) => {
             let show_loading_spinner =
@@ -854,6 +876,8 @@ pub fn paint_texture_at(
     options: &ImageOptions,
     texture: &SizedTexture,
 ) {
+    let uv = options.uv;
+
     if options.bg_fill != Default::default() {
         painter.add(RectShape::filled(
             rect,
@@ -872,14 +896,14 @@ pub fn paint_texture_at(
             );
 
             let mut mesh = Mesh::with_texture(texture.id);
-            mesh.add_rect_with_uv(rect, options.uv, options.tint);
+            mesh.add_rect_with_uv(rect, uv, options.tint);
             mesh.rotate(rot, rect.min + origin * rect.size());
             painter.add(Shape::mesh(mesh));
         }
         None => {
             painter.add(
                 RectShape::filled(rect, options.corner_radius, options.tint)
-                    .with_texture(texture.id, options.uv),
+                    .with_texture(texture.id, uv),
             );
         }
     }

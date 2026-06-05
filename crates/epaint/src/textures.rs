@@ -40,6 +40,7 @@ impl TextureManager {
         self.metas.entry(id).or_insert_with(|| TextureMeta {
             name,
             size: image.size(),
+            original_size: image.original_size(),
             bytes_per_pixel: image.bytes_per_pixel(),
             byte_size,
             retain_count: 1,
@@ -63,6 +64,7 @@ impl TextureManager {
             } else {
                 // whole update
                 meta.size = delta.image.size();
+                meta.original_size = delta.image.original_size();
                 meta.bytes_per_pixel = delta.image.bytes_per_pixel();
                 meta.byte_size = match &delta.image {
                     ImageData::Color(img) => img.size[0] * img.size[1] * 4,
@@ -134,8 +136,15 @@ pub struct TextureMeta {
     /// A human-readable name useful for debugging.
     pub name: String,
 
-    /// width x height
+    /// width x height (GPU allocation size, may include block-alignment padding).
     pub size: [usize; 2],
+
+    /// Original (pre-padding) width x height.
+    ///
+    /// For GPU-compressed images whose dimensions were rounded up to a
+    /// block-alignment boundary, this stores the original unpadded size.
+    /// For uncompressed images this is identical to [`Self::size`].
+    pub original_size: [usize; 2],
 
     /// 4 or 1
     pub bytes_per_pixel: usize,

@@ -30,6 +30,20 @@ impl ImageData {
         }
     }
 
+    /// The original (pre-padding) size of the image data.
+    ///
+    /// For uncompressed images this is identical to [`Self::size()`].
+    /// For GPU-compressed images whose dimensions were rounded up to a
+    /// block-alignment boundary, this returns the original (unpadded) dimensions.
+    pub fn original_size(&self) -> [usize; 2] {
+        match self {
+            Self::Color(image) => image.size,
+            Self::GpuCompressed(image) => {
+                [image.original_width as usize, image.original_height as usize]
+            }
+        }
+    }
+
     pub fn width(&self) -> usize {
         self.size()[0]
     }
@@ -38,10 +52,17 @@ impl ImageData {
         self.size()[1]
     }
 
+    pub fn original_width(&self) -> usize {
+        self.original_size()[0]
+    }
+
+    pub fn original_height(&self) -> usize {
+        self.original_size()[1]
+    }
+
     pub fn bytes_per_pixel(&self) -> usize {
         match self {
-            Self::Color(_) => 4,
-            Self::GpuCompressed(_) => 4,
+            Self::Color(_) | Self::GpuCompressed(_) => 4,
         }
     }
 }
@@ -380,17 +401,33 @@ pub enum GpuCompressedFormat {
 ///
 /// The image data is in a block-compressed format ([`GpuCompressedFormat`])
 /// and can be uploaded directly to the GPU without CPU-side decompression.
+///
+/// Block-compressed formats (BC1, BC7) operate on 4×4 texel blocks, so the
+/// GPU texture dimensions must be multiples of 4. [`Self::width`] and
+/// [`Self::height`] store the **padded** dimensions used for GPU allocation.
+/// [`Self::original_size`] stores the original (pre-padding) dimensions so
+/// that consumers can compute the correct aspect ratio and UV coordinates.
 #[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct GpuCompressedImage {
     /// The block-compressed format (BC1 or BC7).
     pub format: GpuCompressedFormat,
 
-    /// Width in texels.
+    /// Width in texels (padded to block-alignment boundary).
     pub width: u32,
 
-    /// Height in texels.
+    /// Height in texels (padded to block-alignment boundary).
     pub height: u32,
+
+    /// Original (pre-padding) image width in texels.
+    ///
+    /// When the image is rendered, use this for layout and aspect-ratio
+    /// computation. The padded [`Self::width`] is only needed for GPU
+    /// texture allocation.
+    pub original_width: u32,
+
+    /// Original (pre-padding) image height in texels.
+    pub original_height: u32,
 
     /// The compressed texture data in the format specified by [`Self::format`].
     pub data: Vec<u8>,
@@ -401,6 +438,7 @@ impl std::fmt::Debug for GpuCompressedImage {
         f.debug_struct("GpuCompressedImage")
             .field("format", &self.format)
             .field("size", &[self.width, self.height])
+            .field("original_size", &[self.original_width, self.original_height])
             .field("data_len", &self.data.len())
             .finish_non_exhaustive()
     }
@@ -417,12 +455,32 @@ mod tests {
             format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
             width: 300,
             height: 200,
+            original_width: 300,
+            original_height: 200,
             data: vec![0u8; 4800],
         };
         let image_data = ImageData::GpuCompressed(Arc::new(img));
         assert_eq!(image_data.size(), [300, 200]);
         assert_eq!(image_data.width(), 300);
         assert_eq!(image_data.height(), 200);
+        assert_eq!(image_data.original_size(), [300, 200]);
+    }
+
+    #[test]
+    fn gpu_compressed_image_original_size_differs_from_gpu_size() {
+        let img = GpuCompressedImage {
+            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            width: 304,
+            height: 200,
+            original_width: 300,
+            original_height: 200,
+            data: vec![0u8; 4800],
+        };
+        let image_data = ImageData::GpuCompressed(Arc::new(img));
+        assert_eq!(image_data.size(), [304, 200]);
+        assert_eq!(image_data.original_size(), [300, 200]);
+        assert_eq!(image_data.original_width(), 300);
+        assert_eq!(image_data.original_height(), 200);
     }
 
     #[test]
@@ -432,6 +490,8 @@ mod tests {
             format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
             width: 100,
             height: 100,
+            original_width: 100,
+            original_height: 100,
             data: data.clone(),
         };
         let arc = Arc::new(img);
@@ -449,11 +509,14 @@ mod tests {
             format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
             width: 12,
             height: 12,
+            original_width: 12,
+            original_height: 12,
             data: vec![0u8; 144],
         };
         let meta = TextureMeta {
-            name: "test".to_string(),
+            name: "test".to_owned(),
             size: [12, 12],
+            original_size: [12, 12],
             bytes_per_pixel: 4,
             byte_size: img.data.len(),
             retain_count: 1,
@@ -469,6 +532,8 @@ mod tests {
             format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
             width: 64,
             height: 64,
+            original_width: 64,
+            original_height: 64,
             data: vec![0u8; 4096],
         };
         let delta = ImageDelta::full(img, TextureOptions::LINEAR);
