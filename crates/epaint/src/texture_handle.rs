@@ -86,12 +86,16 @@ impl TextureHandle {
             .set(self.id, ImageDelta::partial(pos, image.into(), options));
     }
 
-    /// width x height
+    /// The original (pre-padding) width and height of this texture.
+    ///
+    /// For raster images this is the pixel size. For compressed textures
+    /// whose GPU dimensions were padded to a block-alignment boundary,
+    /// this returns the original (unpadded) size.
     pub fn size(&self) -> [usize; 2] {
         self.tex_mngr
             .read()
             .meta(self.id)
-            .map_or([0, 0], |tex| tex.size)
+            .map_or([0, 0], |tex| tex.original_size)
     }
 
     /// width x height
