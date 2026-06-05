@@ -63,8 +63,8 @@ use std::{
 };
 
 use ahash::HashMap;
-
 use emath::{Float as _, OrderedFloat};
+
 use epaint::{ColorImage, TextureHandle, TextureId, Vec2, mutex::Mutex, textures::TextureOptions};
 
 use crate::Context;
@@ -444,7 +444,10 @@ pub trait ImageLoader: std::any::Any {
 pub struct SizedTexture {
     pub id: TextureId,
 
-    /// Point size of the original SVG, or the size of the image in texels.
+    /// Point size of the original SVG, or the original size of the image.
+    ///
+    /// For block-compressed textures whose GPU dimensions were padded to
+    /// a block-alignment boundary, this is the **original (unpadded)** size.
     pub size: Vec2,
 }
 
