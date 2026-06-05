@@ -32,10 +32,16 @@ impl TextureManager {
         let id = TextureId::Managed(self.next_id);
         self.next_id += 1;
 
+        let byte_size = match &image {
+            ImageData::Color(img) => img.size[0] * img.size[1] * 4,
+            ImageData::GpuCompressed(img) => img.data.len(),
+        };
+
         self.metas.entry(id).or_insert_with(|| TextureMeta {
             name,
             size: image.size(),
             bytes_per_pixel: image.bytes_per_pixel(),
+            byte_size,
             retain_count: 1,
             options,
         });
@@ -58,6 +64,10 @@ impl TextureManager {
                 // whole update
                 meta.size = delta.image.size();
                 meta.bytes_per_pixel = delta.image.bytes_per_pixel();
+                meta.byte_size = match &delta.image {
+                    ImageData::Color(img) => img.size[0] * img.size[1] * 4,
+                    ImageData::GpuCompressed(img) => img.data.len(),
+                };
                 // since we update the whole image, we can discard all old enqueued deltas
                 self.delta.set.retain(|(x, _)| x != &id);
             }
@@ -130,6 +140,10 @@ pub struct TextureMeta {
     /// 4 or 1
     pub bytes_per_pixel: usize,
 
+    /// Actual on-GPU byte size.
+    /// For compressed textures this is `data.len()`, for uncompressed it is `width * height * bytes_per_pixel`.
+    pub byte_size: usize,
+
     /// Free when this reaches zero.
     pub retain_count: usize,
 
@@ -139,9 +153,8 @@ pub struct TextureMeta {
 
 impl TextureMeta {
     /// Size in bytes.
-    /// width x height x [`Self::bytes_per_pixel`].
     pub fn bytes_used(&self) -> usize {
-        self.size[0] * self.size[1] * self.bytes_per_pixel
+        self.byte_size
     }
 }
 

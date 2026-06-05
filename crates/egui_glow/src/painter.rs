@@ -528,6 +528,93 @@ impl Painter {
 
                 self.upload_texture_srgb(delta.pos, image.size, delta.options, data);
             }
+            egui::ImageData::GpuCompressed(compressed) => {
+                let extensions = self.gl.supported_extensions();
+                let has_bptc = extensions
+                    .iter()
+                    .any(|ext| ext == "GL_ARB_texture_compression_bptc");
+
+                let internal_format = match compressed.format {
+                    egui::GpuCompressedFormat::Bc7RgbaUnormSrgb => {
+                        if !has_bptc {
+                            log::error!(
+                                "GL_ARB_texture_compression_bptc not supported, skipping compressed texture {tex_id:?}"
+                            );
+                            return;
+                        }
+                        glow::COMPRESSED_RGBA_BPTC_UNORM
+                    }
+                    egui::GpuCompressedFormat::Bc1RgbaUnormSrgb => {
+                        let has_s3tc = extensions
+                            .iter()
+                            .any(|ext| ext == "GL_EXT_texture_compression_s3tc");
+                        if !has_s3tc {
+                            log::error!(
+                                "GL_EXT_texture_compression_s3tc not supported, skipping compressed texture {tex_id:?}"
+                            );
+                            return;
+                        }
+                        glow::COMPRESSED_RGB_S3TC_DXT1_EXT
+                    }
+                };
+
+                if cfg!(debug_assertions) {
+                    debug_assert!(
+                        delta.pos.is_none(),
+                        "partial updates not supported for compressed textures"
+                    );
+                } else if delta.pos.is_some() {
+                    log::warn!(
+                        "Partial update for compressed texture {tex_id:?}, treating as full update"
+                    );
+                }
+
+                unsafe {
+                    self.set_tex_parameters(delta.options);
+
+                    let level = 0;
+                    let border = 0;
+                    profiling::scope!("gl.compressed_tex_image_2d");
+                    let image_size = compressed.data.len() as i32;
+                    self.gl.compressed_tex_image_2d(
+                        glow::TEXTURE_2D,
+                        level,
+                        internal_format as i32,
+                        compressed.width as i32,
+                        compressed.height as i32,
+                        border,
+                        image_size,
+                        &compressed.data,
+                    );
+                    check_for_gl_error!(&self.gl, "compressed_tex_image_2d");
+                }
+            }
+        }
+    }
+
+    unsafe fn set_tex_parameters(&self, options: egui::TextureOptions) {
+        unsafe {
+            self.gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                options.magnification.glow_code(None) as i32,
+            );
+            self.gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                options.minification.glow_code(options.mipmap_mode) as i32,
+            );
+            self.gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_S,
+                options.wrap_mode.glow_code() as i32,
+            );
+            self.gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_WRAP_T,
+                options.wrap_mode.glow_code() as i32,
+            );
+            check_for_gl_error!(&self.gl, "tex_parameter");
         }
     }
 
@@ -554,28 +641,7 @@ impl Painter {
         );
 
         unsafe {
-            self.gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MAG_FILTER,
-                options.magnification.glow_code(None) as i32,
-            );
-            self.gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MIN_FILTER,
-                options.minification.glow_code(options.mipmap_mode) as i32,
-            );
-
-            self.gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_WRAP_S,
-                options.wrap_mode.glow_code() as i32,
-            );
-            self.gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_WRAP_T,
-                options.wrap_mode.glow_code() as i32,
-            );
-            check_for_gl_error!(&self.gl, "tex_parameter");
+            self.set_tex_parameters(options);
 
             let (internal_format, src_format) = if self.is_webgl_1 {
                 let format = if self.srgb_textures {
