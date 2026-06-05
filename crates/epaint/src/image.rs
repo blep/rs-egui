@@ -15,12 +15,18 @@ use std::sync::Arc;
 pub enum ImageData {
     /// RGBA image.
     Color(Arc<ColorImage>),
+
+    /// GPU-compressed texture (BC1 or BC7).
+    ///
+    /// Upload directly to GPU without CPU-side decompression.
+    GpuCompressed(Arc<GpuCompressedImage>),
 }
 
 impl ImageData {
     pub fn size(&self) -> [usize; 2] {
         match self {
             Self::Color(image) => image.size,
+            Self::GpuCompressed(image) => [image.width as usize, image.height as usize],
         }
     }
 
@@ -35,6 +41,7 @@ impl ImageData {
     pub fn bytes_per_pixel(&self) -> usize {
         match self {
             Self::Color(_) => 4,
+            Self::GpuCompressed(_) => 4,
         }
     }
 }
@@ -334,12 +341,141 @@ impl From<Arc<ColorImage>> for ImageData {
     }
 }
 
+impl From<GpuCompressedImage> for ImageData {
+    #[inline(always)]
+    fn from(image: GpuCompressedImage) -> Self {
+        Self::GpuCompressed(Arc::new(image))
+    }
+}
+
+impl From<Arc<GpuCompressedImage>> for ImageData {
+    #[inline]
+    fn from(image: Arc<GpuCompressedImage>) -> Self {
+        Self::GpuCompressed(image)
+    }
+}
+
 impl std::fmt::Debug for ColorImage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ColorImage")
             .field("size", &self.size)
             .field("pixel-count", &self.pixels.len())
             .finish_non_exhaustive()
+    }
+}
+
+// ----------------------------------------------------------------------------
+
+/// The format of a GPU-compressed texture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum GpuCompressedFormat {
+    /// BC1 (S3TC DXT1) RGBA with sRGB transfer function.
+    Bc1RgbaUnormSrgb,
+    /// BC7 (BPTC) RGBA with sRGB transfer function.
+    Bc7RgbaUnormSrgb,
+}
+
+/// A GPU-compressed texture image stored in RAM.
+///
+/// The image data is in a block-compressed format ([`GpuCompressedFormat`])
+/// and can be uploaded directly to the GPU without CPU-side decompression.
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct GpuCompressedImage {
+    /// The block-compressed format (BC1 or BC7).
+    pub format: GpuCompressedFormat,
+
+    /// Width in texels.
+    pub width: u32,
+
+    /// Height in texels.
+    pub height: u32,
+
+    /// The compressed texture data in the format specified by [`Self::format`].
+    pub data: Vec<u8>,
+}
+
+impl std::fmt::Debug for GpuCompressedImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuCompressedImage")
+            .field("format", &self.format)
+            .field("size", &[self.width, self.height])
+            .field("data_len", &self.data.len())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::textures::{TextureMeta, TextureOptions};
+
+    #[test]
+    fn gpu_compressed_image_size() {
+        let img = GpuCompressedImage {
+            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            width: 300,
+            height: 200,
+            data: vec![0u8; 4800],
+        };
+        let image_data = ImageData::GpuCompressed(Arc::new(img));
+        assert_eq!(image_data.size(), [300, 200]);
+        assert_eq!(image_data.width(), 300);
+        assert_eq!(image_data.height(), 200);
+    }
+
+    #[test]
+    fn gpu_compressed_image_data_roundtrip() {
+        let data = vec![42u8; 9600];
+        let img = GpuCompressedImage {
+            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            width: 100,
+            height: 100,
+            data: data.clone(),
+        };
+        let arc = Arc::new(img);
+        let image_data = ImageData::GpuCompressed(arc);
+        if let ImageData::GpuCompressed(retrieved) = &image_data {
+            assert_eq!(retrieved.data, data);
+        } else {
+            panic!("Expected GpuCompressed variant");
+        }
+    }
+
+    #[test]
+    fn texture_meta_byte_size_compressed() {
+        let img = GpuCompressedImage {
+            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            width: 12,
+            height: 12,
+            data: vec![0u8; 144],
+        };
+        let meta = TextureMeta {
+            name: "test".to_string(),
+            size: [12, 12],
+            bytes_per_pixel: 4,
+            byte_size: img.data.len(),
+            retain_count: 1,
+            options: TextureOptions::LINEAR,
+        };
+        assert_eq!(meta.byte_size, 144);
+        assert_eq!(meta.bytes_used(), 144);
+    }
+
+    #[test]
+    fn image_delta_full_compressed() {
+        let img = GpuCompressedImage {
+            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            width: 64,
+            height: 64,
+            data: vec![0u8; 4096],
+        };
+        let delta = ImageDelta::full(img, TextureOptions::LINEAR);
+        assert!(delta.pos.is_none());
+        assert_eq!(delta.image.width(), 64);
+        assert_eq!(delta.image.height(), 64);
+        assert!(matches!(delta.image, ImageData::GpuCompressed(_)));
     }
 }
 

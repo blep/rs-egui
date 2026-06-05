@@ -622,6 +622,108 @@ impl Renderer {
             depth_or_array_layers: 1,
         };
 
+        // Handle GPU-compressed textures (BC1/BC7)
+        if let epaint::ImageData::GpuCompressed(compressed) = &image_delta.image {
+            if !device
+                .features()
+                .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
+            {
+                log::warn!(
+                    "GPU/driver does not support TEXTURE_COMPRESSION_BC (BC1/BC7), skipping compressed texture {id:?}"
+                );
+                return;
+            }
+
+            let (wgpu_format, block_size) = match compressed.format {
+                epaint::GpuCompressedFormat::Bc1RgbaUnormSrgb => {
+                    (wgpu::TextureFormat::Bc1RgbaUnormSrgb, 8)
+                }
+                epaint::GpuCompressedFormat::Bc7RgbaUnormSrgb => {
+                    (wgpu::TextureFormat::Bc7RgbaUnormSrgb, 16)
+                }
+            };
+
+            let block_width = 4u32;
+            let blocks_per_row = (size.width + block_width - 1) / block_width;
+
+            if cfg!(debug_assertions) {
+                debug_assert!(
+                    image_delta.pos.is_none(),
+                    "partial updates not supported for compressed textures"
+                );
+            } else if image_delta.pos.is_some() {
+                log::warn!("Partial update for compressed texture {id:?}, treating as full update");
+            }
+
+            let label_str = format!("egui_texid_{id:?}");
+            let label = Some(label_str.as_str());
+
+            let texture = {
+                profiling::scope!("create_texture");
+                device.create_texture(&wgpu::TextureDescriptor {
+                    label,
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu_format,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                })
+            };
+
+            let origin = wgpu::Origin3d::ZERO;
+
+            let bind_group = {
+                let sampler = self
+                    .samplers
+                    .entry(image_delta.options)
+                    .or_insert_with(|| create_sampler(image_delta.options, device));
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label,
+                    layout: &self.texture_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                &texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                })
+            };
+
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &compressed.data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(blocks_per_row * block_size),
+                    rows_per_image: None,
+                },
+                size,
+            );
+
+            self.textures.insert(
+                id,
+                Texture {
+                    texture: Some(texture),
+                    bind_group,
+                    options: Some(image_delta.options),
+                },
+            );
+            return;
+        }
+
         let data_color32 = match &image_delta.image {
             epaint::ImageData::Color(image) => {
                 assert_eq!(
@@ -630,6 +732,9 @@ impl Renderer {
                     "Mismatch between texture size and texel count"
                 );
                 Cow::Borrowed(&image.pixels)
+            }
+            epaint::ImageData::GpuCompressed(_) => {
+                unreachable!("ImageData::GpuCompressed must be handled by the earlier branch in update_texture")
             }
         };
         let data_bytes: &[u8] = bytemuck::cast_slice(data_color32.as_slice());
