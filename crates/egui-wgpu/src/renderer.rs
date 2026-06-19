@@ -635,11 +635,11 @@ impl Renderer {
             }
 
             let (wgpu_format, block_size) = match compressed.format {
-                epaint::GpuCompressedFormat::Bc1RgbaUnormSrgb => {
-                    (wgpu::TextureFormat::Bc1RgbaUnormSrgb, 8)
+                epaint::GpuCompressedFormat::Bc1RgbaUnorm => {
+                    (wgpu::TextureFormat::Bc1RgbaUnorm, 8)
                 }
-                epaint::GpuCompressedFormat::Bc7RgbaUnormSrgb => {
-                    (wgpu::TextureFormat::Bc7RgbaUnormSrgb, 16)
+                epaint::GpuCompressedFormat::Bc7RgbaUnorm => {
+                    (wgpu::TextureFormat::Bc7RgbaUnorm, 16)
                 }
             };
 

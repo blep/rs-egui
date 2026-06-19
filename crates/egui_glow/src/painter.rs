@@ -535,7 +535,7 @@ impl Painter {
                     .any(|ext| ext == "GL_ARB_texture_compression_bptc");
 
                 let internal_format = match compressed.format {
-                    egui::GpuCompressedFormat::Bc7RgbaUnormSrgb => {
+                    egui::GpuCompressedFormat::Bc7RgbaUnorm => {
                         if !has_bptc {
                             log::error!(
                                 "GL_ARB_texture_compression_bptc not supported, skipping compressed texture {tex_id:?}"
@@ -544,7 +544,7 @@ impl Painter {
                         }
                         glow::COMPRESSED_RGBA_BPTC_UNORM
                     }
-                    egui::GpuCompressedFormat::Bc1RgbaUnormSrgb => {
+                    egui::GpuCompressedFormat::Bc1RgbaUnorm => {
                         let has_s3tc = extensions
                             .iter()
                             .any(|ext| ext == "GL_EXT_texture_compression_s3tc");

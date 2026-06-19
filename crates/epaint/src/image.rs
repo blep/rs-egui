@@ -391,10 +391,13 @@ impl std::fmt::Debug for ColorImage {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum GpuCompressedFormat {
-    /// BC1 (S3TC DXT1) RGBA with sRGB transfer function.
-    Bc1RgbaUnormSrgb,
-    /// BC7 (BPTC) RGBA with sRGB transfer function.
-    Bc7RgbaUnormSrgb,
+    /// BC1 (S3TC DXT1) RGBA without sRGB transfer function.
+    /// The GPU sampler returns raw gamma-space pixel values. This matches
+    /// egui's shader which expects gamma-encoded data from all textures.
+    Bc1RgbaUnorm,
+    /// BC7 (BPTC) RGBA without sRGB transfer function.
+    /// Same rationale as [`Bc1RgbaUnorm`].
+    Bc7RgbaUnorm,
 }
 
 /// A GPU-compressed texture image stored in RAM.
