@@ -48,3 +48,25 @@ impl From<u32> for TouchId {
         Self(id as u64)
     }
 }
+
+/// The type of a stylus or pen tool.
+///
+/// Corresponds to platform-specific tool type enums
+/// (Android `AMOTION_EVENT_TOOL_TYPE_*`, Windows `POINTER_PEN_INFO`,
+/// Linux libinput tablet tool type).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum ToolType {
+    /// A general-purpose stylus or pen.
+    Pen,
+    /// The eraser end of a stylus.
+    Eraser,
+    /// A finger.
+    Finger,
+    /// A mouse.
+    Mouse,
+    /// A palm.
+    Palm,
+    /// The tool type is unknown.
+    Unknown,
+}

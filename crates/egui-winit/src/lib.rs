@@ -355,12 +355,19 @@ impl State {
             WindowEvent::Touch(touch) => {
                 self.on_touch(window, touch);
                 let consumed = match touch.phase {
-                    winit::event::TouchPhase::Started
-                    | winit::event::TouchPhase::Ended
-                    | winit::event::TouchPhase::Cancelled => {
-                        self.egui_ctx.egui_wants_pointer_input()
-                    }
                     winit::event::TouchPhase::Moved => self.egui_ctx.egui_is_using_pointer(),
+                    _ => false,
+                };
+                EventResponse {
+                    repaint: true,
+                    consumed,
+                }
+            }
+            WindowEvent::Pen(pen) => {
+                self.on_pen(window, pen);
+                let consumed = match pen.phase {
+                    winit::event::TouchPhase::Moved => self.egui_ctx.egui_is_using_pointer(),
+                    _ => false,
                 };
                 EventResponse {
                     repaint: true,
@@ -852,6 +859,72 @@ impl State {
             self.egui_input
                 .events
                 .push(egui::Event::PointerMoved(pos_in_points));
+        }
+    }
+
+    fn on_pen(&mut self, window: &Window, pen: &winit::event::PenEvent) {
+        let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
+        let pos_in_points = egui::pos2(
+            pen.location.x as f32 / pixels_per_point,
+            pen.location.y as f32 / pixels_per_point,
+        );
+
+        // Emit stylus event
+        self.egui_input.events.push(egui::Event::Stylus(egui::StylusData {
+            pos: pos_in_points,
+            force: match pen.force {
+                Some(winit::event::Force::Normalized(force)) => Some(force as f32),
+                Some(winit::event::Force::Calibrated {
+                    force,
+                    max_possible_force,
+                    ..
+                }) => Some((force / max_possible_force) as f32),
+                None => None,
+            },
+            tilt_x: pen.tilt_x.map(|v| v as f32),
+            tilt_y: pen.tilt_y.map(|v| v as f32),
+            orientation: pen.orientation.map(|v| v as f32),
+            hover_distance: pen.hover_distance.map(|v| v as f32),
+            tool_type: pen.tool_type.map(|tt| match tt {
+                winit::event::PenToolType::Pen => egui::ToolType::Pen,
+                winit::event::PenToolType::Eraser => egui::ToolType::Eraser,
+                winit::event::PenToolType::Finger => egui::ToolType::Finger,
+                winit::event::PenToolType::Mouse => egui::ToolType::Mouse,
+                winit::event::PenToolType::Palm => egui::ToolType::Palm,
+                winit::event::PenToolType::Unknown => egui::ToolType::Unknown,
+            }),
+            button_state: pen.button_state,
+        }));
+
+        // Emulate mouse pointer from pen events (same as on_touch does for touch).
+        // PenEvent replaces Touch for stylus input, so we must drive egui's
+        // pointer state ourselves.
+        match pen.phase {
+            winit::event::TouchPhase::Started => {
+                self.pointer_touch_id = Some(pen.id);
+                self.on_cursor_moved(window, pen.location);
+                self.on_mouse_button_input(
+                    winit::event::ElementState::Pressed,
+                    winit::event::MouseButton::Left,
+                );
+            }
+            winit::event::TouchPhase::Moved => {
+                self.on_cursor_moved(window, pen.location);
+            }
+            winit::event::TouchPhase::Ended => {
+                self.pointer_touch_id = None;
+                self.on_mouse_button_input(
+                    winit::event::ElementState::Released,
+                    winit::event::MouseButton::Left,
+                );
+                self.pointer_pos_in_points = None;
+                self.egui_input.events.push(egui::Event::PointerGone);
+            }
+            winit::event::TouchPhase::Cancelled => {
+                self.pointer_touch_id = None;
+                self.pointer_pos_in_points = None;
+                self.egui_input.events.push(egui::Event::PointerGone);
+            }
         }
     }
 
@@ -2276,6 +2349,7 @@ pub fn short_window_event_description(event: &winit::event::WindowEvent) -> &'st
         WindowEvent::TouchpadPressure { .. } => "WindowEvent::TouchpadPressure",
         WindowEvent::AxisMotion { .. } => "WindowEvent::AxisMotion",
         WindowEvent::Touch { .. } => "WindowEvent::Touch",
+        WindowEvent::Pen { .. } => "WindowEvent::Pen",
         WindowEvent::ScaleFactorChanged { .. } => "WindowEvent::ScaleFactorChanged",
         WindowEvent::ThemeChanged { .. } => "WindowEvent::ThemeChanged",
         WindowEvent::Occluded { .. } => "WindowEvent::Occluded",

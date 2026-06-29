@@ -17,7 +17,7 @@ mod viewport_info;
 
 pub use self::{
     dropped_file::DroppedFile,
-    event::Event,
+    event::{Event, StylusData},
     event_filter::EventFilter,
     hovered_file::HoveredFile,
     ime_event::ImeEvent,
@@ -28,6 +28,6 @@ pub use self::{
     pointer_button::{NUM_POINTER_BUTTONS, PointerButton},
     raw_input::RawInput,
     safe_area_insets::SafeAreaInsets,
-    touch::{TouchDeviceId, TouchId, TouchPhase},
+    touch::{ToolType, TouchDeviceId, TouchId, TouchPhase},
     viewport_info::{ViewportEvent, ViewportInfo},
 };
