@@ -38,9 +38,10 @@ impl ImageData {
     pub fn original_size(&self) -> [usize; 2] {
         match self {
             Self::Color(image) => image.size,
-            Self::GpuCompressed(image) => {
-                [image.original_width as usize, image.original_height as usize]
-            }
+            Self::GpuCompressed(image) => [
+                image.original_width as usize,
+                image.original_height as usize,
+            ],
         }
     }
 
@@ -395,6 +396,7 @@ pub enum GpuCompressedFormat {
     /// The GPU sampler returns raw gamma-space pixel values. This matches
     /// egui's shader which expects gamma-encoded data from all textures.
     Bc1RgbaUnorm,
+
     /// BC7 (BPTC) RGBA without sRGB transfer function.
     /// Same rationale as [`Bc1RgbaUnorm`].
     Bc7RgbaUnorm,
@@ -441,7 +443,10 @@ impl std::fmt::Debug for GpuCompressedImage {
         f.debug_struct("GpuCompressedImage")
             .field("format", &self.format)
             .field("size", &[self.width, self.height])
-            .field("original_size", &[self.original_width, self.original_height])
+            .field(
+                "original_size",
+                &[self.original_width, self.original_height],
+            )
             .field("data_len", &self.data.len())
             .finish_non_exhaustive()
     }
@@ -455,7 +460,7 @@ mod tests {
     #[test]
     fn gpu_compressed_image_size() {
         let img = GpuCompressedImage {
-            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            format: GpuCompressedFormat::Bc7RgbaUnorm,
             width: 300,
             height: 200,
             original_width: 300,
@@ -472,7 +477,7 @@ mod tests {
     #[test]
     fn gpu_compressed_image_original_size_differs_from_gpu_size() {
         let img = GpuCompressedImage {
-            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            format: GpuCompressedFormat::Bc7RgbaUnorm,
             width: 304,
             height: 200,
             original_width: 300,
@@ -490,7 +495,7 @@ mod tests {
     fn gpu_compressed_image_data_roundtrip() {
         let data = vec![42u8; 9600];
         let img = GpuCompressedImage {
-            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            format: GpuCompressedFormat::Bc7RgbaUnorm,
             width: 100,
             height: 100,
             original_width: 100,
@@ -509,7 +514,7 @@ mod tests {
     #[test]
     fn texture_meta_byte_size_compressed() {
         let img = GpuCompressedImage {
-            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            format: GpuCompressedFormat::Bc7RgbaUnorm,
             width: 12,
             height: 12,
             original_width: 12,
@@ -532,7 +537,7 @@ mod tests {
     #[test]
     fn image_delta_full_compressed() {
         let img = GpuCompressedImage {
-            format: GpuCompressedFormat::Bc7RgbaUnormSrgb,
+            format: GpuCompressedFormat::Bc7RgbaUnorm,
             width: 64,
             height: 64,
             original_width: 64,
