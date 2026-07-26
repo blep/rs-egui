@@ -399,7 +399,7 @@ pub enum GpuCompressedFormat {
     Bc1RgbaUnorm,
 
     /// BC7 (BPTC) RGBA without sRGB transfer function.
-    /// Same rationale as [`Bc1RgbaUnorm`].
+    /// Same rationale as [`GpuCompressedFormat::Bc1RgbaUnorm`].
     Bc7RgbaUnorm,
 }
 
@@ -411,8 +411,8 @@ pub enum GpuCompressedFormat {
 /// Block-compressed formats (BC1, BC7) operate on 4×4 texel blocks, so the
 /// GPU texture dimensions must be multiples of 4. [`Self::width`] and
 /// [`Self::height`] store the **padded** dimensions used for GPU allocation.
-/// [`Self::original_size`] stores the original (pre-padding) dimensions so
-/// that consumers can compute the correct aspect ratio and UV coordinates.
+/// [`Self::original_width`] and [`Self::original_height`] store the original (pre-padding)
+/// dimensions so that consumers can compute the correct aspect ratio and UV coordinates.
 #[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct GpuCompressedImage {
