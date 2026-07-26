@@ -642,7 +642,7 @@ impl Renderer {
             };
 
             let block_width = 4u32;
-            let blocks_per_row = (size.width + block_width - 1) / block_width;
+            let blocks_per_row = size.width.div_ceil(block_width);
 
             if cfg!(debug_assertions) {
                 debug_assert!(
