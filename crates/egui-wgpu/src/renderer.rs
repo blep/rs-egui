@@ -665,9 +665,7 @@ impl Renderer {
             }
 
             let (wgpu_format, block_size) = match compressed.format {
-                epaint::GpuCompressedFormat::Bc1RgbaUnorm => {
-                    (wgpu::TextureFormat::Bc1RgbaUnorm, 8)
-                }
+                epaint::GpuCompressedFormat::Bc1RgbaUnorm => (wgpu::TextureFormat::Bc1RgbaUnorm, 8),
                 epaint::GpuCompressedFormat::Bc7RgbaUnorm => {
                     (wgpu::TextureFormat::Bc7RgbaUnorm, 16)
                 }
@@ -764,7 +762,9 @@ impl Renderer {
                 Cow::Borrowed(&image.pixels)
             }
             epaint::ImageData::GpuCompressed(_) => {
-                unreachable!("ImageData::GpuCompressed must be handled by the earlier branch in update_texture")
+                unreachable!(
+                    "ImageData::GpuCompressed must be handled by the earlier branch in update_texture"
+                )
             }
         };
         let data_bytes: &[u8] = bytemuck::cast_slice(data_color32.as_slice());
