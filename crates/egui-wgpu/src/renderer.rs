@@ -703,6 +703,9 @@ impl Renderer {
             let origin = wgpu::Origin3d::ZERO;
 
             let bind_group = {
+                let nearest =
+                    image_delta.options.magnification == epaint::textures::TextureFilter::Nearest;
+                let wrap_mode = wrap_mode_flag(image_delta.options.wrap_mode);
                 let sampler = self
                     .samplers
                     .entry(image_delta.options)
@@ -720,6 +723,12 @@ impl Renderer {
                         wgpu::BindGroupEntry {
                             binding: 1,
                             resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: self.texture_flag_buffers
+                                [texture_flags(nearest, wrap_mode)]
+                                .as_entire_binding(),
                         },
                     ],
                 })
